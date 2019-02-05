@@ -1,9 +1,14 @@
 mod raw;
 
+use libc::{fclose, fdopen};
+
 use std::error;
-use std::ffi::CString;
+use std::ffi::{CStr, CString};
 use std::fmt;
+use std::fs::File;
 use std::marker::PhantomData;
+use std::os::unix::io::IntoRawFd;
+use std::path::Path;
 use std::result;
 
 #[derive(Debug)]
@@ -32,6 +37,14 @@ impl From<std::ffi::NulError> for Error {
     }
 }
 
+impl From<std::io::Error> for Error {
+    fn from(e: std::io::Error) -> Error {
+        Error {
+            message: format!("{}", e).to_owned(),
+        }
+    }
+}
+
 pub type Result<T> = result::Result<T, Error>;
 
 pub struct Pool {
@@ -45,6 +58,14 @@ impl Pool {
                 ptr: raw::pool_create(),
             }
         }
+    }
+
+    pub fn set_arch(&mut self, arch: &str) -> Result<()> {
+        let arch = CString::new(arch)?;
+        unsafe {
+            raw::pool_setarch(self.ptr, arch.as_ptr());
+        }
+        Ok(())
     }
 }
 
@@ -70,6 +91,22 @@ impl<'pool> Repository<'pool> {
             })
         }
     }
+
+    // Read repo from .solv file and add it to pool
+    pub fn set_solv_file(&mut self, solv_file: &Path, flags: Option<i32>) -> Result<()> {
+        let f = File::open(solv_file)?;
+
+        unsafe {
+            let fp = fdopen(
+                f.into_raw_fd(),
+                CStr::from_bytes_with_nul_unchecked(b"r\0").as_ptr(),
+            );
+            raw::repo_add_solv(self.ptr, fp, flags.unwrap_or(0));
+            fclose(fp);
+        }
+
+        Ok(())
+    }
 }
 
 impl<'pool> Drop for Repository<'pool> {
@@ -85,3 +122,11 @@ pub enum DistType {
     Arch = 2,
     Haiku = 3,
 }
+
+pub const REPO_REUSE_REPODATA: i32 = 1;
+pub const REPO_NO_INTERNALIZE: i32 = 2;
+pub const REPO_LOCALPOOL: i32 = 4;
+pub const REPO_USE_LOADING: i32 = 8;
+pub const REPO_EXTEND_SOLVABLES: i32 = 16;
+pub const REPO_USE_ROOTDIR: i32 = 32;
+pub const REPO_NO_LOCATION: i32 = 64;
