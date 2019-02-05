@@ -3,7 +3,6 @@ name = "solv"
 version = "0.1.0"
 authors = ["Benjamin Kircher <benjamin.kircher@gmail.com>"]
 edition = "2018"
-build = "build.rs"
 
 [[bin]]
 name = "whatrequires"
